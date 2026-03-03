@@ -67,6 +67,18 @@ local ui = {
   measure = nil,
 }
 
+local VALID_ANCHOR_POINTS = {
+  TOPLEFT = true,
+  TOP = true,
+  TOPRIGHT = true,
+  LEFT = true,
+  CENTER = true,
+  RIGHT = true,
+  BOTTOMLEFT = true,
+  BOTTOM = true,
+  BOTTOMRIGHT = true,
+}
+
 local EnsureUI
 
 local function DPrint(db, msg)
@@ -548,24 +560,72 @@ local function BuildRows(db)
   return rows
 end
 
+local function IsFiniteNumber(v)
+  return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
+end
+
+local function GetCenterOffsets(frame)
+  local cx, cy = frame:GetCenter()
+  local pcx, pcy = UIParent:GetCenter()
+  if not (cx and cy and pcx and pcy) then
+    return nil, nil
+  end
+
+  local frameScale = frame:GetEffectiveScale() or 1
+  local parentScale = UIParent:GetEffectiveScale() or 1
+  local x = ((cx * frameScale) - (pcx * parentScale)) / parentScale
+  local y = ((cy * frameScale) - (pcy * parentScale)) / parentScale
+  return x, y
+end
+
+local function HasValidSavedPosition(db)
+  if not db or not db.customPosition then
+    return false
+  end
+  if not VALID_ANCHOR_POINTS[db.point] or not VALID_ANCHOR_POINTS[db.relativePoint] then
+    return false
+  end
+  if not IsFiniteNumber(db.x) or not IsFiniteNumber(db.y) then
+    return false
+  end
+  return true
+end
+
 local function SavePosition(frame, db)
-  local point, _, relativePoint, x, y = frame:GetPoint(1)
-  if point and relativePoint and x and y then
+  local x, y = GetCenterOffsets(frame)
+  if IsFiniteNumber(x) and IsFiniteNumber(y) then
+    db.customPosition = true
+    db.point = "CENTER"
+    db.relativePoint = "CENTER"
+    db.x = x
+    db.y = y
+    return
+  end
+
+  local point, _, relativePoint, fallbackX, fallbackY = frame:GetPoint(1)
+  relativePoint = relativePoint or point
+  if VALID_ANCHOR_POINTS[point] and VALID_ANCHOR_POINTS[relativePoint] and IsFiniteNumber(fallbackX) and IsFiniteNumber(fallbackY) then
     db.customPosition = true
     db.point = point
     db.relativePoint = relativePoint
-    db.x = x
-    db.y = y
+    db.x = fallbackX
+    db.y = fallbackY
   end
 end
 
 local function ApplyPosition(frame, db)
   frame:ClearAllPoints()
 
-  if db.customPosition then
+  if HasValidSavedPosition(db) then
     frame:SetPoint(db.point, UIParent, db.relativePoint, db.x, db.y)
     return
   end
+
+  db.customPosition = false
+  db.point = DEFAULTS.point
+  db.relativePoint = DEFAULTS.relativePoint
+  db.x = DEFAULTS.x
+  db.y = DEFAULTS.y
 
   if PVEFrameTab1 and PVEFrameTab1.GetName then
     frame:SetPoint("TOPLEFT", PVEFrameTab1, "BOTTOMLEFT", -20, -15)
@@ -597,10 +657,10 @@ EnsureUI = function(db)
   frame:SetScript("OnDragStart", function(self)
     if not db.locked then
       if not db.customPosition then
-        local cx, cy = self:GetCenter()
-        if cx and cy then
+        local x, y = GetCenterOffsets(self)
+        if IsFiniteNumber(x) and IsFiniteNumber(y) then
           self:ClearAllPoints()
-          self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
+          self:SetPoint("CENTER", UIParent, "CENTER", x, y)
         end
         db.customPosition = true
       end
@@ -778,6 +838,7 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("PLAYER_LOGOUT")
 events:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 events:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
 
@@ -804,6 +865,14 @@ events:SetScript("OnEvent", function(_, event, arg1)
       print(string.format("%s loaded. Type /mpp help", ADDON_NAME))
     end
     RefreshSoon()
+    return
+  end
+
+  if event == "PLAYER_LOGOUT" then
+    local db = GetDB()
+    if ui.frame and db.customPosition then
+      SavePosition(ui.frame, db)
+    end
     return
   end
 
