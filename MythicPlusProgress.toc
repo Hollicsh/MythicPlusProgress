@@ -3,6 +3,7 @@
 ## IconTexture: Interface\AddOns\MythicPlusProgress\icon
 ## Notes: Displays Mythic+ seasonal best runs and score.
 ## Notes-frFR: Affiche ton score Mythic+ de la saison, et tes meilleures runs.
+## Notes-ruRU: Отображает лучшие прохождения М+ и результаты в текущем сезоне.
 ## Author: Psyko
 ## Version: v3
 ## SavedVariables: MythicPlusProgressDB
